@@ -1,0 +1,17 @@
+[package]
+name = "swim"
+version = "0.1.0"
+authors = ["et4te <et4te@protonmail.com>"]
+
+[dependencies]
+bincode = "1.0.1"
+bytes = "0.4"
+clap = "*"
+futures = "0.1"
+# tokio has a bug pre 0.1.12 which causes a buffer overflow in length
+# delimited streams.
+tokio = { git = "https://github.com/tokio-rs/tokio" }
+tokio-serde = "0.3.0"
+rand = "*"
+serde = "1.0.80"
+serde_derive = "1.0.80"
