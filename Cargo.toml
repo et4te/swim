@@ -3,6 +3,9 @@ name = "swim"
 version = "0.1.0"
 authors = ["et4te <et4te@protonmail.com>"]
 
+[dependencies.crossbeam-skiplist]
+git = "https://github.com/crossbeam-rs/crossbeam"
+
 [dependencies]
 bincode = "1.0.1"
 bytes = "0.4"
@@ -15,3 +18,4 @@ tokio-serde = "0.3.0"
 rand = "*"
 serde = "1.0.80"
 serde_derive = "1.0.80"
+uuid = { version = "0.7.1", features = [ "serde", "v4" ] }

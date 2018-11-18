@@ -1,7 +1,9 @@
 use std::net::SocketAddr;
+use uuid::Uuid;
 
 #[derive(Clone, Serialize, Deserialize, Hash, PartialEq, Eq, Debug)]
 pub enum Gossip {
+    Join(SocketAddr),
     Alive(SocketAddr),
     Suspect(SocketAddr),
     Confirm(SocketAddr),
@@ -9,7 +11,8 @@ pub enum Gossip {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum Message {
-    Ping(SocketAddr, Vec<Gossip>),
-    Ack(SocketAddr, Vec<Gossip>),
-    PingReq(SocketAddr, SocketAddr),
+    Join(Uuid, SocketAddr),
+    Ping(Uuid, Vec<Gossip>),
+    Ack(Uuid, Vec<Gossip>),
+    PingReq(Uuid, Uuid),
 }
