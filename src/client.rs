@@ -19,7 +19,7 @@ pub fn send(peer_addr: SocketAddr, message: Message) -> impl Future<Item = (), E
         let _ = sender.unbounded_send(message).unwrap();
 
         // Send everything in receiver to sink
-        let output_writer = message_channel.w.send_all(
+        let output_writer = message_channel.writer.send_all(
             receiver.map_err(|_| {
                 io::Error::new(io::ErrorKind::Other, "[client] Receiver error")
             })

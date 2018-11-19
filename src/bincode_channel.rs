@@ -12,8 +12,8 @@ use message::Message;
 /// A bi-directional bincode channel
 
 pub struct BincodeChannel<T> {
-    pub r: BincodeReader<FramedReader, T>,
-    pub w: BincodeWriter<FramedWriter, T>,
+    pub reader: BincodeReader<FramedReader, T>,
+    pub writer: BincodeWriter<FramedWriter, T>,
 }
 
 impl<T> BincodeChannel<T>
@@ -23,8 +23,8 @@ impl<T> BincodeChannel<T>
     pub fn new(stream: TcpStream) -> BincodeChannel<T> {
         let (reader, writer) = stream.split();
         BincodeChannel {
-            r: new_reader(reader),
-            w: new_writer(writer),
+            reader: new_reader(reader),
+            writer: new_writer(writer),
         }
     }
 }
@@ -34,15 +34,15 @@ impl Sink for BincodeChannel<Message> {
     type SinkError = io::Error;
     
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        self.w.start_send(item)
+        self.writer.start_send(item)
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        self.w.poll_complete()
+        self.writer.poll_complete()
     }
 
     fn close(&mut self) -> Poll<(), Self::SinkError> {
-        self.w.close()
+        self.writer.close()
     }
 
 }
@@ -52,7 +52,7 @@ impl Stream for BincodeChannel<Message> {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.r.poll()
+        self.reader.poll()
     }
 }
 
