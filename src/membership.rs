@@ -1,10 +1,11 @@
-
 use std::sync::Arc;
 use std::time::Duration;
 use std::net::SocketAddr;
+use std::collections::HashSet;
 use crossbeam_skiplist::SkipMap;
 use crossbeam_skiplist::map::Entry;
 use uuid::Uuid;
+use rand::{self, Rng};
 use message::Message;
 use client::spawn_send;
 
@@ -38,7 +39,7 @@ impl Membership {
         self.inner.get(&uuid)
     }
 
-    pub fn process_join(&mut self, peer_uuid: Uuid, peer_addr: SocketAddr) -> bool  {
+    pub fn process_join(&self, peer_uuid: Uuid, peer_addr: SocketAddr) -> bool  {
         match self.inner.get(&peer_uuid) {
             Some(_) =>
                 false,
@@ -50,13 +51,28 @@ impl Membership {
     }
 
     pub fn sample(&self, count: usize, exclude: Vec<Uuid>) -> Vec<Entry<Uuid, (SocketAddr, State)>> {
+        assert!(count < self.inner.len());
+
         let mut members = vec![];
         for entry in self.inner.iter() {
             if !exclude.contains(entry.key()) {
                 members.push(entry)
             }
         }
-        members
+
+        // Pick count indices at random below self.inner.len()
+        let mut rng = rand::thread_rng();
+        let mut indices: HashSet<usize> = HashSet::new();
+        while indices.len() < count {
+            let r: usize = rng.gen_range(0, self.inner.len());
+            indices.insert(r);
+        }
+
+        let mut sample = vec![];
+        for i in indices.iter().cloned() {
+            sample.push(members[i].clone());
+        }
+        sample
     }
 
     pub fn send(&self, peer_uuid: Uuid, message: Message) {
