@@ -3,6 +3,9 @@ name = "swim"
 version = "0.1.0"
 authors = ["et4te <et4te@protonmail.com>"]
 
+[dependencies.crossbeam]
+git = "https://github.com/crossbeam-rs/crossbeam"
+
 [dependencies.crossbeam-skiplist]
 git = "https://github.com/crossbeam-rs/crossbeam"
 
