@@ -21,6 +21,7 @@ mod dissemination;
 mod server;
 mod client;
 mod cache;
+mod swim;
 
 use std::time::{Instant, Duration};
 use std::net::SocketAddr;
@@ -32,15 +33,13 @@ use membership::Membership;
 use dissemination::Dissemination;
 use message::Message;
 use cache::TimeoutCache;
+use swim::Swim;
 
 enum PeerState {
     Alive,
     Suspected,
     Confirmed,
 }
-
-const PROTOCOL_PERIOD: u64 = 1000;
-const ROUND_TRIP_TIME: u64 = 333;
 
 fn maybe_delay(delay: Option<u64>) {
     match delay {
@@ -83,60 +82,17 @@ fn main() {
     //     None => None,
     // };
 
-    let membership = Membership::new();
-    let dissemination = Dissemination::new();
-    let cache = TimeoutCache::new();
-    let server = Server::new(bind_addr.clone());
-    server.clone().spawn(membership.clone(), dissemination.clone(), cache.clone());
+    let swim = Swim::new(bind_addr.clone());
+    let server = Server::new(bind_addr.clone(), swim.clone());
+    server.clone().spawn();
 
     if let Some(bootstrap_addr) = matches.value_of("bootstrap") {
         let bootstrap_addr: SocketAddr = bootstrap_addr.parse().unwrap();
-        server.send_bootstrap_join(bootstrap_addr);
-        dissemination.gossip_join(server.uuid.clone(), server.addr.clone());
+        server.bootstrap(bootstrap_addr);
+
+        // server.swim.send_bootstrap_join(bootstrap_addr);
+        // dissemination.gossip_join(server.uuid.clone(), server.addr.clone());
     }
 
-    let interval = Duration::from_millis(PROTOCOL_PERIOD);
-    let swim = Interval::new(Instant::now(), interval)
-        .for_each(move |_instant| {
-            println!("members_count = {:?}", membership.len());
-            if membership.len() >= 2 {
-                let members = membership.sample(1, vec![server.uuid.clone()]);
-                if members.len() > 0 {
-                    let entry = &members[0];
-                    let peer_uuid = entry.key();
-                    println!("[swim] Sampled peer = {:?}", peer_uuid.clone());
-                    let gossip = dissemination.acquire_gossip(membership.clone(), 1);
-                    let message = Message::Ping(server.uuid.clone(), gossip);
-                    membership.send(peer_uuid.clone(), message);
-                    cache.create_ack_timeout(*peer_uuid);
-                }
-
-                if let Ok(Async::Ready((ack_uuids, indirect_ack_uuids))) = cache.poll_purge() {
-                    for expired_uuid in ack_uuids {
-                        let members = membership.sample(1, vec![server.uuid.clone()]);
-                        if members.len() > 0 {
-                            let entry = &members[0];
-                            let peer_uuid = entry.key();
-                            println!("[swim] Sampled peer = {:?}", peer_uuid.clone());
-                            let message = Message::PingReq(server.uuid.clone(), expired_uuid);
-                            membership.send(peer_uuid.clone(), message);
-                            cache.create_indirect_ack_timeout(*peer_uuid);
-                        }
-                    }
-
-                    for expired_uuid in indirect_ack_uuids {
-                        // Disseminate suspected
-                        println!("[disseminate] Disseminating suspect = {:?}", expired_uuid);
-                    }
-                }
-
-                Ok(())
-            } else {
-                Ok(())
-            }
-        }).map_err(|e| {
-            panic!("Interval error; err={:}", e);
-        });
-    
-    tokio::run(swim);
+    swim.run();
 }
