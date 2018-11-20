@@ -62,10 +62,6 @@ impl Dissemination {
 
     pub fn acquire_gossip<'a>(&'a self, membership: &'a Membership, limit: usize) -> Vec<Gossip> {
         let member_count = membership.len();
-        println!("[dissemination] log {:?} = {:?}",
-                 member_count.clone(),
-                 (member_count.clone() as f64).ln(),
-        );
         let gossip_rate = GOSSIP_RATE * ((member_count as f64).ln().round() as usize);
         println!("[dissemination] gossip_rate = {:?}", gossip_rate);
         let mut gossip_vec = vec![];
@@ -97,7 +93,7 @@ impl Dissemination {
                         }
                     }
                     None => {
-                        println!("[dissemination] Error gossip not present in map");
+                        println!("[dissemination] error gossip not present in map");
                         return gossip_vec;
                     }
                 }
