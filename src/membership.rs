@@ -13,7 +13,6 @@ use client::spawn_send;
 pub enum State {
     Alive,
     Suspected,
-    Confirmed,
 }
 
 type MembershipMap = SkipMap<Uuid, (SocketAddr, State)>;
@@ -37,6 +36,36 @@ impl Membership {
 
     pub fn get(&self, uuid: Uuid) -> Option<Entry<Uuid, (SocketAddr, State)>> {
         self.inner.get(&uuid)
+    }
+
+    pub fn remove(&self, uuid: Uuid) {
+        match self.get(uuid) {
+            Some(_) =>
+                println!("[membership] attempt to remove non-existent entry"),
+            None => {
+                self.inner.remove(&uuid).unwrap();
+            }
+        }
+    }
+
+    pub fn alive(&self, uuid: Uuid) {
+        match self.get(uuid) {
+            Some(entry) => {
+                let (peer_addr, _) = entry.value();
+                self.inner.insert(uuid, (peer_addr.clone(), State::Alive));
+            }
+            None => ()
+        }
+    }
+
+    pub fn suspect(&self, uuid: Uuid) {
+        match self.get(uuid) {
+            Some(entry) => {
+                let (peer_addr, _) = entry.value();
+                self.inner.insert(uuid, (peer_addr.clone(), State::Suspected));
+            }
+            None => ()
+        }
     }
 
     pub fn process_join(&self, peer_uuid: Uuid, peer_addr: SocketAddr) -> bool  {
@@ -86,5 +115,4 @@ impl Membership {
             }
         }
     }
-
 }
