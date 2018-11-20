@@ -8,12 +8,20 @@ use uuid::Uuid;
 
 const ROUND_TRIP_TIME: u64 = 333;
 
+pub struct Timeouts {
+    pub ack_uuids: Vec<Uuid>,
+    pub indirect_ack_uuids: Vec<Uuid>,
+    pub suspect_uuids: Vec<Uuid>,
+}
+
 #[derive(Clone)]
 pub struct TimeoutCache {
     ack_map: Arc<Mutex<HashMap<Uuid, delay_queue::Key>>>,
     indirect_ack_map: Arc<Mutex<HashMap<Uuid, delay_queue::Key>>>,
+    suspect_map: Arc<Mutex<HashMap<Uuid, delay_queue::Key>>>,
     ack_timeouts: Arc<Mutex<DelayQueue<Uuid>>>,
     indirect_ack_timeouts: Arc<Mutex<DelayQueue<Uuid>>>,
+    suspect_timeouts: Arc<Mutex<DelayQueue<Uuid>>>,
 }
 
 impl TimeoutCache {
@@ -22,17 +30,21 @@ impl TimeoutCache {
         TimeoutCache {
             ack_map: Arc::new(Mutex::new(HashMap::new())),
             indirect_ack_map: Arc::new(Mutex::new(HashMap::new())),
+            suspect_map: Arc::new(Mutex::new(HashMap::new())),
             ack_timeouts: Arc::new(Mutex::new(DelayQueue::new())),
             indirect_ack_timeouts: Arc::new(Mutex::new(DelayQueue::new())),
+            suspect_timeouts: Arc::new(Mutex::new(DelayQueue::new())),
         }
     }
 
     // When a Ping message is sent to a peer, a key is stored which expires after
     // ROUND_TRIP_TIME has elapsed.
     pub fn create_ack_timeout(&self, peer_uuid: Uuid) {
-        let timeout_key = self.ack_timeouts.lock().unwrap()
+        let mut ack_timeouts = self.ack_timeouts.lock().unwrap();
+        let mut ack_map = self.ack_map.lock().unwrap();
+        let timeout_key = ack_timeouts
             .insert(peer_uuid, Duration::from_millis(ROUND_TRIP_TIME));
-        self.ack_map.lock().unwrap()
+        ack_map
             .insert(peer_uuid, timeout_key);
     }
 
@@ -45,10 +57,24 @@ impl TimeoutCache {
             .insert(suspect_uuid, timeout_key);
     }
 
+    pub fn create_suspect_timeout(&self, suspect_uuid: Uuid) {
+        let mut suspect_timeouts = self.suspect_timeouts.lock().unwrap();
+        let mut suspect_map = self.suspect_map.lock().unwrap();
+        match suspect_map.get(&suspect_uuid) {
+            Some(_) => (),
+            None => {
+                let timeout_key = suspect_timeouts
+                    .insert(suspect_uuid, Duration::from_millis(ROUND_TRIP_TIME));
+                suspect_map
+                    .insert(suspect_uuid, timeout_key);
+            }
+        }
+    }
+
     pub fn remove_ack_timeout(&self, peer_uuid: Uuid) {
         let mut ack_map = self.ack_map.lock().unwrap();
+        let mut ack_timeouts = self.ack_timeouts.lock().unwrap();
         if let Some(expiration_key) = ack_map.remove(&peer_uuid) {
-            let mut ack_timeouts = self.ack_timeouts.lock().unwrap();
             ack_timeouts.remove(&expiration_key);
         }
     }
@@ -61,16 +87,26 @@ impl TimeoutCache {
         }
     }
 
-    pub fn poll_purge(&self) -> Poll<(Vec<Uuid>, Vec<Uuid>), timer::Error> {
+    pub fn remove_suspect_timeout(&self, suspect_uuid: Uuid) {
+        let mut suspect_map = self.suspect_map.lock().unwrap();
+        let mut suspect_timeouts = self.suspect_timeouts.lock().unwrap();
+        if let Some(expiration_key) = suspect_map.remove(&suspect_uuid) {
+            suspect_timeouts.remove(&expiration_key);
+        }
+    }
+
+    pub fn poll_purge(&self) -> Poll<Timeouts, timer::Error> {
         let mut ack_timeout_uuids = vec![];
         let mut ack_timeouts = self.ack_timeouts.lock().unwrap();
         let mut ack_map = self.ack_map.lock().unwrap();
         while let Some(expired) = try_ready!(ack_timeouts.poll()) {
             let suspect_uuid = expired.get_ref().clone();
-            println!("[cache] ack {:?} expired", suspect_uuid);
+            println!("[cache] ack {:?} expired", suspect_uuid.to_string());
             let _ = ack_map.remove(&suspect_uuid).unwrap();
             ack_timeout_uuids.push(suspect_uuid);
         }
+
+        // TODO: Forward the reply from a peer
 
         let mut indirect_ack_timeout_uuids = vec![];
         let mut indirect_ack_timeouts = self.indirect_ack_timeouts.lock().unwrap();
@@ -82,6 +118,22 @@ impl TimeoutCache {
             indirect_ack_timeout_uuids.push(suspect_uuid);
         }
 
-        Ok(Async::Ready((ack_timeout_uuids, indirect_ack_timeout_uuids)))
+        let mut suspect_timeout_uuids = vec![];
+        let mut suspect_timeouts = self.suspect_timeouts.lock().unwrap();
+        let mut suspect_map = self.suspect_map.lock().unwrap();
+        while let Some(expired) = try_ready!(suspect_timeouts.poll()) {
+            let suspect_uuid = expired.get_ref().clone();
+            println!("[cache] suspect {:?} expired", suspect_uuid);
+            let _ = suspect_map.remove(&suspect_uuid).unwrap();
+            suspect_timeout_uuids.push(suspect_uuid);
+        }
+
+        let timeouts = Timeouts {
+            ack_uuids: ack_timeout_uuids,
+            indirect_ack_uuids: indirect_ack_timeout_uuids,
+            suspect_uuids: suspect_timeout_uuids,
+        };
+
+        Ok(Async::Ready(timeouts))
     }
 }
