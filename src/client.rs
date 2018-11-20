@@ -10,12 +10,12 @@ use bincode_channel::BincodeChannel;
 pub fn send(peer_addr: SocketAddr, message: Message) -> impl Future<Item = (), Error = ()> {
     let connect = TcpStream::connect(&peer_addr.clone());
     connect.and_then(move |socket| {
-        println!("[client] Connected to peer at {:?}", peer_addr.clone());
+        // println!("[client] Connected to peer at {:?}", peer_addr.clone());
         let message_channel = BincodeChannel::<Message>::new(socket);
         let (sender, receiver) = mpsc::unbounded();
 
         // Since this is a client send start by sending the message
-        println!("[client] SEND: {:?}", message.clone());
+        // println!("[client] SEND: {:?}", message.clone());
         let _ = sender.unbounded_send(message).unwrap();
 
         // Send everything in receiver to sink
@@ -31,8 +31,8 @@ pub fn send(peer_addr: SocketAddr, message: Message) -> impl Future<Item = (), E
 
         Ok(())
     }).map_err(|e| {
-        // When the connection to a peer fails, ...
-        println!("[client:error] Accept error = {:?}", e);
+        // Suspect this peer
+        println!("[client] connect error = {:?}", e);
     })
 }
 

@@ -6,7 +6,7 @@ use uuid::Uuid;
 use membership::Membership;
 use message::Gossip;
 
-const MINIMUM_MEMBERS: usize = 3;
+const MINIMUM_MEMBERS: usize = 2;
 const GOSSIP_RATE: usize = 2;
 
 type GossipMap = SkipMap<Gossip, usize>;
@@ -29,8 +29,7 @@ impl Dissemination {
         }
     }
 
-    pub fn gossip_join(&self, peer_uuid: Uuid, peer_addr: SocketAddr) {
-        let gossip = Gossip::Join(peer_uuid, peer_addr.to_string());
+    pub fn try_gossip(&self, gossip: Gossip) {
         match self.gossip_map.get(&gossip) {
             Some(entry) => (),
             None => {
@@ -41,13 +40,33 @@ impl Dissemination {
         }
     }
 
-    pub fn acquire_gossip(&self, membership: Membership, limit: usize) -> Vec<Gossip> {
+    pub fn gossip_join(&self, peer_uuid: Uuid, peer_addr: SocketAddr) {
+        let gossip = Gossip::Join(peer_uuid, peer_addr.to_string());
+        self.try_gossip(gossip)
+    }
+
+    pub fn gossip_alive(&self, peer_uuid: Uuid) {
+        let gossip = Gossip::Alive(peer_uuid);
+        self.try_gossip(gossip)
+    }
+
+    pub fn gossip_suspect(&self, peer_uuid: Uuid) {
+        let gossip = Gossip::Suspect(peer_uuid);
+        self.try_gossip(gossip)
+    }
+
+    pub fn gossip_confirm(&self, peer_uuid: Uuid) {
+        let gossip = Gossip::Confirm(peer_uuid);
+        self.try_gossip(gossip)
+    }
+
+    pub fn acquire_gossip<'a>(&'a self, membership: &'a Membership, limit: usize) -> Vec<Gossip> {
         let member_count = membership.len();
         println!("[dissemination] log {:?} = {:?}",
                  member_count.clone(),
                  (member_count.clone() as f64).ln(),
         );
-        let gossip_rate = GOSSIP_RATE * ((member_count as f64).ln().trunc() as usize);
+        let gossip_rate = GOSSIP_RATE * ((member_count as f64).ln().round() as usize);
         println!("[dissemination] gossip_rate = {:?}", gossip_rate);
         let mut gossip_vec = vec![];
         while gossip_vec.len() < limit {
