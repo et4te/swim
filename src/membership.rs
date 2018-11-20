@@ -40,11 +40,11 @@ impl Membership {
 
     pub fn remove(&self, uuid: Uuid) {
         match self.get(uuid) {
-            Some(_) =>
-                println!("[membership] attempt to remove non-existent entry"),
-            None => {
+            Some(_) => {
                 self.inner.remove(&uuid).unwrap();
             }
+            None =>
+                println!("[membership] attempt to remove non-existent entry"),
         }
     }
 
