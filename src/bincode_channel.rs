@@ -7,7 +7,7 @@ use tokio::io::{AsyncRead, ReadHalf, WriteHalf};
 use bincode_codec::{BincodeReader, BincodeWriter};
 use serde::{Serialize, Deserialize};
 
-use message::Message;
+use message::{Request, Response};
 
 /// A bi-directional bincode channel
 
@@ -29,8 +29,8 @@ impl<T> BincodeChannel<T>
     }
 }
 
-impl Sink for BincodeChannel<Message> {
-    type SinkItem = Message;
+impl Sink for BincodeChannel<Request> {
+    type SinkItem = Request;
     type SinkError = io::Error;
     
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
@@ -47,8 +47,8 @@ impl Sink for BincodeChannel<Message> {
 
 }
 
-impl Stream for BincodeChannel<Message> {
-    type Item = Message;
+impl Stream for BincodeChannel<Response> {
+    type Item = Response;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
