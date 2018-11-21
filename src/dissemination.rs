@@ -2,9 +2,8 @@ use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
 use crossbeam_skiplist::SkipMap;
 use crossbeam::deque::{self, Worker, Stealer, Steal};
-use uuid::Uuid;
 use membership::Membership;
-use message::Gossip;
+use message::{NetAddr, Gossip};
 
 const MINIMUM_MEMBERS: usize = 2;
 const GOSSIP_RATE: usize = 2;
@@ -40,30 +39,30 @@ impl Dissemination {
         }
     }
 
-    pub fn gossip_join(&self, peer_uuid: Uuid, peer_addr: SocketAddr) {
-        let gossip = Gossip::Join(peer_uuid, peer_addr.to_string());
+    pub fn gossip_join(&self, peer_addr: NetAddr) {
+        let gossip = Gossip::Join(peer_addr);
         self.try_gossip(gossip)
     }
 
-    pub fn gossip_alive(&self, peer_uuid: Uuid) {
-        let gossip = Gossip::Alive(peer_uuid);
+    pub fn gossip_alive(&self, peer_addr: NetAddr) {
+        let gossip = Gossip::Alive(peer_addr);
         self.try_gossip(gossip)
     }
 
-    pub fn gossip_suspect(&self, peer_uuid: Uuid) {
-        let gossip = Gossip::Suspect(peer_uuid);
+    pub fn gossip_suspect(&self, peer_addr: NetAddr) {
+        let gossip = Gossip::Suspect(peer_addr);
         self.try_gossip(gossip)
     }
 
-    pub fn gossip_confirm(&self, peer_uuid: Uuid) {
-        let gossip = Gossip::Confirm(peer_uuid);
+    pub fn gossip_confirm(&self, peer_addr: NetAddr) {
+        let gossip = Gossip::Confirm(peer_addr);
         self.try_gossip(gossip)
     }
 
     pub fn acquire_gossip<'a>(&'a self, membership: &'a Membership, limit: usize) -> Vec<Gossip> {
         let member_count = membership.len();
         let gossip_rate = GOSSIP_RATE * ((member_count as f64).ln().round() as usize);
-        println!("[dissemination] gossip_rate = {:?}", gossip_rate);
+        // println!("[dissemination] gossip_rate = {:?}", gossip_rate);
         let mut gossip_vec = vec![];
         while gossip_vec.len() < limit {
             if let Steal::Data(gossip) = self.gossip_stealer.steal() {
@@ -72,7 +71,7 @@ impl Dissemination {
                         // Join messages are disseminated continuously until MINIMUM_MEMBERS
                         // has been reached.
                         let dissemination_count = entry.value();
-                        if let Gossip::Join(_, _) = gossip {
+                        if let Gossip::Join(_) = gossip {
                             if (member_count > MINIMUM_MEMBERS) && (*dissemination_count > gossip_rate) {
                                 self.gossip_map.remove(entry.key());
                             } else {
