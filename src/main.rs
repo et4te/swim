@@ -1,5 +1,6 @@
 extern crate bincode;
 extern crate bytes;
+extern crate colored;
 extern crate clap;
 extern crate crossbeam;
 extern crate crossbeam_skiplist;
@@ -11,7 +12,6 @@ extern crate serde_derive;
 extern crate serde;
 extern crate tokio;
 extern crate tokio_serde;
-extern crate uuid;
 
 mod bincode_codec;
 mod bincode_channel;
@@ -22,6 +22,7 @@ mod server;
 mod client;
 mod cache;
 mod swim;
+mod slush;
 
 use std::time::{Instant, Duration};
 use std::net::SocketAddr;
@@ -31,7 +32,6 @@ use clap::{Arg, App};
 use server::Server;
 use membership::Membership;
 use dissemination::Dissemination;
-use message::Message;
 use cache::TimeoutCache;
 use swim::Swim;
 
@@ -51,7 +51,7 @@ fn maybe_delay(delay: Option<u64>) {
 }
 
 fn main() {
-    let matches = App::new("SWIM")
+    let matches = App::new("swim")
         .version("1.0")
         .arg(Arg::with_name("address")
              .short("a")
@@ -77,21 +77,18 @@ fn main() {
     let bind_addr: SocketAddr = matches.value_of("address").unwrap()
         .parse().unwrap();
 
-    // let delay: Option<u64> = match matches.value_of("delay") {
-    //     Some(s) => Some(s.parse().unwrap()),
-    //     None => None,
-    // };
+    let delay: Option<u64> = match matches.value_of("delay") {
+        Some(s) => Some(s.parse().unwrap()),
+        None => None,
+    };
 
-    let swim = Swim::new(bind_addr.clone());
+    let swim = Swim::new(bind_addr.clone(), delay);
     let server = Server::new(bind_addr.clone(), swim.clone());
     server.clone().spawn();
 
     if let Some(bootstrap_addr) = matches.value_of("bootstrap") {
         let bootstrap_addr: SocketAddr = bootstrap_addr.parse().unwrap();
         server.bootstrap(bootstrap_addr);
-
-        // server.swim.send_bootstrap_join(bootstrap_addr);
-        // dissemination.gossip_join(server.uuid.clone(), server.addr.clone());
     }
 
     swim.run();
