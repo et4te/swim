@@ -1,49 +1,92 @@
 use std::net::SocketAddr;
 use std::fmt;
-use uuid::Uuid;
+use slush::Colour;
+
+/// A wrapper type for SocketAddr with usable derivations.
+
+#[derive(Clone, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NetAddr {
+    inner: String,
+}
+
+impl NetAddr {
+    pub fn new(addr: SocketAddr) -> NetAddr {
+        NetAddr { inner: addr.to_string() }
+    }
+
+    pub fn to_socket_addr(&self) -> SocketAddr {
+        self.inner.parse().unwrap()
+    }
+}
+
+impl fmt::Debug for NetAddr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Gossip {
-    Join(Uuid, String), //SocketAddr),
-    Alive(Uuid),
-    Suspect(Uuid),
-    Confirm(Uuid),
+    Join(NetAddr),
+    Alive(NetAddr),
+    Suspect(NetAddr),
+    Confirm(NetAddr),
 }
 
 impl fmt::Debug for Gossip {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Gossip::Join(uuid, _) =>
-                write!(f, "JOIN({})", uuid.to_hyphenated().to_string()),
-            Gossip::Alive(uuid) =>
-                write!(f, "ALIVE({})", uuid.to_hyphenated().to_string()),
-            Gossip::Suspect(uuid) =>
-                write!(f, "SUSPECT({})", uuid.to_hyphenated().to_string()),
-            Gossip::Confirm(uuid) =>
-                write!(f, "CONFIRM({})", uuid.to_string()),
+            Gossip::Join(addr) =>
+                write!(f, "JOIN({:?})", addr),
+            Gossip::Alive(addr) =>
+                write!(f, "ALIVE({:?})", addr),
+            Gossip::Suspect(addr) =>
+                write!(f, "SUSPECT({:?})", addr),
+            Gossip::Confirm(addr) =>
+                write!(f, "CONFIRM({:?})", addr),
         }
     }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub enum Message {
-    Join(Uuid, SocketAddr),
-    Ping(Uuid, Vec<Gossip>),
-    Ack(Uuid, Vec<Gossip>),
-    PingReq(Uuid, Uuid),
+pub enum Request {
+    Join(NetAddr),
+    Ping(NetAddr, Vec<Gossip>),
+    PingReq(NetAddr, NetAddr),
+    Query(NetAddr, Colour),
 }
 
-impl fmt::Debug for Message {
+#[derive(Clone, Serialize, Deserialize)]
+pub enum Response {
+    Join(NetAddr),
+    Ack(NetAddr, Vec<Gossip>),
+    Respond(NetAddr, Colour),
+}
+
+impl fmt::Debug for Request {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Message::Join(uuid, _) =>
-                write!(f, "JOIN({})", uuid.to_string()),
-            Message::Ping(uuid, gossip) =>
-                write!(f, "PING({},{:?})", uuid.to_string(), gossip),
-            Message::Ack(uuid, gossip) =>
-                write!(f, "ACK({},{:?})", uuid.to_string(), gossip),
-            Message::PingReq(peer_uuid, suspect_uuid) =>
-                write!(f, "PING-REQ({},{})", peer_uuid.to_string(), suspect_uuid.to_string()),
+            Request::Join(addr) =>
+                write!(f, "JOIN({:?})", addr),
+            Request::Ping(addr, gossip) =>
+                write!(f, "PING({:?},{:?})", addr, gossip),
+            Request::PingReq(peer_addr, suspect_addr) =>
+                write!(f, "PING-REQ({:?},{:?})", peer_addr, suspect_addr),
+            Request::Query(peer_addr, col) =>
+                write!(f, "QUERY({:?},{:?})", peer_addr, col),
+        }
+    }
+}
+
+impl fmt::Debug for Response {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Response::Join(addr) =>
+                write!(f, "JOIN({:?})", addr),
+            Response::Ack(addr, gossip) =>
+                write!(f, "ACK({:?},{:?})", addr, gossip),
+            Response::Respond(peer_addr, col) =>
+                write!(f, "RESPOND({:?},{:?})", peer_addr, col),
         }
     }
 }
