@@ -4,9 +4,8 @@ use std::net::SocketAddr;
 use std::collections::HashSet;
 use crossbeam_skiplist::SkipMap;
 use crossbeam_skiplist::map::Entry;
-use uuid::Uuid;
 use rand::{self, Rng};
-use message::Message;
+use message::{NetAddr, Request};
 use client::spawn_send;
 
 #[derive(Debug)]
@@ -15,7 +14,7 @@ pub enum State {
     Suspected,
 }
 
-type MembershipMap = SkipMap<Uuid, (SocketAddr, State)>;
+type MembershipMap = SkipMap<NetAddr, State>;
 
 #[derive(Clone)]
 pub struct Membership {
@@ -34,52 +33,54 @@ impl Membership {
         self.inner.len()
     }
 
-    pub fn get(&self, uuid: Uuid) -> Option<Entry<Uuid, (SocketAddr, State)>> {
-        self.inner.get(&uuid)
+    pub fn get(&self, addr: &NetAddr) -> Option<Entry<NetAddr, State>> {
+        self.inner.get(addr)
     }
 
-    pub fn remove(&self, uuid: Uuid) {
-        match self.get(uuid) {
+    pub fn remove(&self, addr: &NetAddr) {
+        match self.get(addr) {
             Some(_) => {
-                self.inner.remove(&uuid).unwrap();
+                self.inner.remove(addr).unwrap();
             }
             None =>
                 println!("[membership] attempt to remove non-existent entry"),
         }
     }
 
-    pub fn alive(&self, uuid: Uuid) {
-        match self.get(uuid) {
+    pub fn alive(&self, addr: NetAddr) {
+        match self.get(&addr) {
             Some(entry) => {
-                let (peer_addr, _) = entry.value();
-                self.inner.insert(uuid, (peer_addr.clone(), State::Alive));
+                let state = entry.value();
+                println!("[membership] overwriting {:?} with alive", state);
+                self.inner.insert(addr, State::Alive);
             }
             None => ()
         }
     }
 
-    pub fn suspect(&self, uuid: Uuid) {
-        match self.get(uuid) {
+    pub fn suspect(&self, addr: NetAddr) {
+        match self.get(&addr) {
             Some(entry) => {
-                let (peer_addr, _) = entry.value();
-                self.inner.insert(uuid, (peer_addr.clone(), State::Suspected));
+                let state = entry.value();
+                println!("[membership] overwriting {:?} with suspect", state);
+                self.inner.insert(addr, State::Suspected);
             }
             None => ()
         }
     }
 
-    pub fn process_join(&self, peer_uuid: Uuid, peer_addr: SocketAddr) -> bool  {
-        match self.inner.get(&peer_uuid) {
+    pub fn process_join(&self, peer_addr: NetAddr) -> bool {
+        match self.get(&peer_addr) {
             Some(_) =>
                 false,
             None => {
-                self.inner.insert(peer_uuid, (peer_addr, State::Alive));
+                self.inner.insert(peer_addr, State::Alive);
                 true
             }
         }
     }
 
-    pub fn sample(&self, count: usize, exclude: Vec<Uuid>) -> Vec<Entry<Uuid, (SocketAddr, State)>> {
+    pub fn sample(&self, count: usize, exclude: Vec<NetAddr>) -> Vec<Entry<NetAddr, State>> {
         assert!(count < self.inner.len());
 
         let mut members = vec![];
@@ -104,11 +105,10 @@ impl Membership {
         sample
     }
 
-    pub fn send(&self, peer_uuid: Uuid, message: Message) {
-        match self.inner.get(&peer_uuid) {
+    pub fn send(&self, peer_addr: NetAddr, request: Request) {
+        match self.inner.get(&peer_addr) {
             Some(entry) => {
-                let (peer_addr, _) = entry.value();
-                spawn_send(*peer_addr, message);
+                spawn_send(peer_addr.to_socket_addr(), request);
             }
             None => {
                 println!("[membership] Unknown peer");
