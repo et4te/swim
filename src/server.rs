@@ -1,17 +1,18 @@
 use std::io;
 use std::net::SocketAddr;
 use std::thread;
+use std::time::Duration;
 use std::sync::Arc;
 use futures::sync::mpsc;
+use futures::sync::mpsc::UnboundedSender;
 use tokio;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
-use uuid::Uuid;
-use bincode_channel::BincodeChannel;
+use bincode_channel;
 use cache::TimeoutCache;
 use membership::Membership;
 use dissemination::Dissemination;
-use message::{Message, Gossip};
+use message::{NetAddr, Request, Response, Gossip};
 use swim::Swim;
 
 #[derive(Clone)]
@@ -32,33 +33,36 @@ impl Server {
         self.swim.send_bootstrap_join(bootstrap_addr);
     }
 
-    fn process_input(self, message: Message) {
-        // println!("[server] RECV: {:?}", message.clone());
-        match message.clone() {
-            Message::Join(peer_uuid, peer_addr) =>
-                self.swim.handle_join(peer_uuid, peer_addr),
-            Message::Ping(peer_uuid, gossip_vec) =>
-                self.swim.handle_ping(peer_uuid, gossip_vec),
-            Message::Ack(peer_uuid, gossip_vec) =>
-                self.swim.handle_ack(peer_uuid, gossip_vec),
-            Message::PingReq(peer_uuid, suspect_uuid) =>
-                self.swim.handle_ping_req(peer_uuid, suspect_uuid),
+    fn process_input(self, sender: UnboundedSender<Response>, request: Request) {
+        println!("[server] RECV: {:?}", request.clone());
+        match request.clone() {
+            // SWIM
+            Request::Join(peer_addr) =>
+                self.swim.handle_join(sender, peer_addr),
+            Request::Ping(peer_addr, gossip_vec) =>
+                self.swim.handle_ping(sender, peer_addr, gossip_vec),
+            Request::PingReq(peer_addr, suspect_addr) =>
+                self.swim.handle_ping_req(peer_addr, suspect_addr),
+            // Protocol
+            Request::Query(peer_addr, col) =>
+                self.swim.handle_query(peer_addr, col),
         }
     }
 
     fn handle_connection(self, socket: TcpStream) {
         // Splits the socket stream into bincode reader / writers
-        let message_channel = BincodeChannel::<Message>::new(socket);
+        let (read_half, write_half) = socket.split();
+        let writer = bincode_channel::new_writer::<Response>(write_half);
+        let mut reader = bincode_channel::new_reader::<Request>(read_half);
 
         // Creates sender and receiver channels in order to read and
         // write data from / to the socket
-        let (_sender, receiver) = mpsc::unbounded();
+        let (tx, rx) = mpsc::unbounded();
 
         // Process the incoming messages from the socket reader stream
-        let input_reader = message_channel
-            .reader
+        let input_reader = reader
             .for_each(move |message| {
-                let () = self.clone().process_input(message);
+                let () = self.clone().process_input(tx.clone(), message);
                 Ok(())
             }).map_err(|err| {
                 println!("[server] Error processing input = {:?}", err);
@@ -68,10 +72,9 @@ impl Server {
 
         // Send all messages received in the receiver stream to the
         // socket writer sink
-        let output_writer = message_channel
-            .writer
+        let output_writer = writer
             .send_all(
-                receiver
+                rx
                     .map_err(|_| io::Error::new(io::ErrorKind::Other, "[server] Receiver error")),
             ).then(|_| Ok(()));
 
