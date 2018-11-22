@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use crossbeam_skiplist::SkipMap;
 use rand::{self, Rng};
 use message::NetAddr;
@@ -12,7 +11,6 @@ pub enum Colour {
 
 pub struct Slush {
     pub col: Colour,
-    pub votes: SkipMap<NetAddr, Colour>,
 }
 
 impl Slush {
@@ -24,39 +22,33 @@ impl Slush {
             0 => Colour::Undecided,
             1 => Colour::Red,
             2 => Colour::Blue,
-            _ => panic!("error colour"),
+            _ => panic!("[slush] error colour"),
         };
-        Slush { col, votes: SkipMap::new() }
-    }
-
-    pub fn len(&self) -> usize {
-        self.votes.len()
+        Slush { col }
     }
 
     pub fn set_col(&mut self, col: Colour) {
         self.col = col;
     }
 
-    pub fn insert(&self, peer_addr: NetAddr, col: Colour) {
-        self.votes.insert(peer_addr, col);
-    }
+}
 
-    pub fn outcome(&self) -> (u32, u32) {
-        let mut red: u32 = 0;
-        let mut blue: u32 = 0;
-        for entry in self.votes.iter() {
-            let col = entry.value();
-            match col {
-                Colour::Red =>
-                    red += 1,
-                Colour::Blue =>
-                    blue += 1,
-                _ =>
-                    panic!("undecided was stored in votes"),
-            }
+pub fn outcome(votes: Vec<Option<Colour>>) -> (u32, u32) {
+    let mut red: u32 = 0;
+    let mut blue: u32 = 0;
+    for col in votes.iter() {
+        match col {
+            Some(Colour::Red) =>
+                red += 1,
+            Some(Colour::Blue) =>
+                blue += 1,
+            Some(Colour::Undecided) =>
+                panic!("[slush] undecided outcome"),
+            None =>
+                panic!("[slush] no outcome"),
         }
-        (red, blue)
     }
+    (red, blue)
 }
 
 
