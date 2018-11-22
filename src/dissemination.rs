@@ -1,40 +1,31 @@
 use std::sync::{Arc, Mutex};
-use std::net::SocketAddr;
 use crossbeam_skiplist::SkipMap;
-use crossbeam::deque::{self, Worker, Stealer, Steal};
 use membership::Membership;
 use message::{NetAddr, Gossip};
 
 const MINIMUM_MEMBERS: usize = 2;
-const GOSSIP_RATE: usize = 2;
+const GOSSIP_RATE: usize = 3;
 
 type GossipMap = SkipMap<Gossip, usize>;
 
 #[derive(Clone)]
 pub struct Dissemination {
     gossip_map: Arc<GossipMap>,
-    gossip_worker: Arc<Mutex<Worker<Gossip>>>,
-    gossip_stealer: Arc<Stealer<Gossip>>,
 }
 
 impl Dissemination {
 
     pub fn new() -> Dissemination {
-        let (worker, stealer) = deque::lifo::<Gossip>();
         Dissemination {
             gossip_map: Arc::new(SkipMap::new()),
-            gossip_worker: Arc::new(Mutex::new(worker)),
-            gossip_stealer: Arc::new(stealer),
         }
     }
 
     pub fn try_gossip(&self, gossip: Gossip) {
         match self.gossip_map.get(&gossip) {
-            Some(entry) => (),
+            Some(_) => (),
             None => {
                 self.gossip_map.insert(gossip.clone(), 0);
-                self.gossip_worker.lock().unwrap()
-                    .push(gossip);
             }
         }
     }
@@ -61,43 +52,34 @@ impl Dissemination {
 
     pub fn acquire_gossip<'a>(&'a self, membership: &'a Membership, limit: usize) -> Vec<Gossip> {
         let member_count = membership.len();
-        let gossip_rate = GOSSIP_RATE * ((member_count as f64).ln().round() as usize);
+        let gossip_rate = GOSSIP_RATE * (((member_count + 1) as f64).ln().round() as usize);
         // println!("[dissemination] gossip_rate = {:?}", gossip_rate);
         let mut gossip_vec = vec![];
-        while gossip_vec.len() < limit {
-            if let Steal::Data(gossip) = self.gossip_stealer.steal() {
-                match self.gossip_map.get(&gossip) {
-                    Some(entry) => {
-                        // Join messages are disseminated continuously until MINIMUM_MEMBERS
-                        // has been reached.
-                        let dissemination_count = entry.value();
-                        if let Gossip::Join(_) = gossip {
-                            if (member_count > MINIMUM_MEMBERS) && (*dissemination_count > gossip_rate) {
-                                self.gossip_map.remove(entry.key());
-                            } else {
-                                self.gossip_worker.lock().unwrap()
-                                    .push(gossip.clone());
-                                self.gossip_map.insert(gossip.clone(), dissemination_count + 1);
-                                gossip_vec.push(gossip);
-                            }
-                        } else {
-                            if *dissemination_count > gossip_rate {
-                                self.gossip_map.remove(entry.key());
-                            } else {
-                                self.gossip_worker.lock().unwrap()
-                                    .push(gossip.clone());
-                                self.gossip_map.insert(gossip.clone(), dissemination_count + 1);
-                                gossip_vec.push(gossip);
-                            }
-                        }
+        if self.gossip_map.len() > 0 {
+            for entry in self.gossip_map.iter() {
+                let gossip = entry.key();
+                // Join messages are disseminated continuously until MINIMUM_MEMBERS has been
+                // reached.
+                let dissemination_count = entry.value();
+                if let Gossip::Join(_) = gossip {
+                    if (*dissemination_count > gossip_rate) {
+                        ()
+                    } else {
+                        println!("[dissemination] dissemination_count({:?}), gossip_rate ({:?})",
+                                 *dissemination_count, gossip_rate);
+                        self.gossip_map.insert(gossip.clone(), dissemination_count + 1);
+                        gossip_vec.push(gossip.clone())
                     }
-                    None => {
-                        println!("[dissemination] error gossip not present in map");
-                        return gossip_vec;
+                } else {
+                    if *dissemination_count > gossip_rate {
+                        ()
+                    } else {
+                        println!("[dissemination] dissemination_count({:?}), gossip_rate ({:?})",
+                                 *dissemination_count, gossip_rate);
+                        self.gossip_map.insert(gossip.clone(), dissemination_count + 1);
+                        gossip_vec.push(gossip.clone())
                     }
                 }
-            } else {
-                return gossip_vec;
             }
         }
         return gossip_vec;
