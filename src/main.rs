@@ -24,15 +24,10 @@ mod cache;
 mod swim;
 mod slush;
 
-use std::time::{Instant, Duration};
+use std::time::Duration;
 use std::net::SocketAddr;
-use tokio::prelude::*;
-use tokio::timer::Interval;
 use clap::{Arg, App};
 use server::Server;
-use membership::Membership;
-use dissemination::Dissemination;
-use cache::TimeoutCache;
 use swim::Swim;
 
 enum PeerState {
