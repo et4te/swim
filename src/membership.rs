@@ -1,12 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
-use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use crossbeam_skiplist::SkipMap;
 use crossbeam_skiplist::map::Entry;
+use crossbeam::deque::{self, Worker, Stealer, Steal};
 use rand::{self, Rng};
 use message::{NetAddr, Request};
-use client::spawn_send;
 
 #[derive(Debug)]
 pub enum State {
@@ -18,29 +16,34 @@ type MembershipMap = SkipMap<NetAddr, State>;
 
 #[derive(Clone)]
 pub struct Membership {
-    inner: Arc<MembershipMap>,
+    elements: Arc<MembershipMap>,
+    ordering_worker: Arc<Mutex<Worker<NetAddr>>>,
+    ordering_stealer: Arc<Stealer<NetAddr>>,
 }
 
 impl Membership {
 
     pub fn new() -> Membership {
+        let (worker, stealer) = deque::lifo::<NetAddr>();
         Membership {
-            inner: Arc::new(SkipMap::new())
+            elements: Arc::new(SkipMap::new()),
+            ordering_worker: Arc::new(Mutex::new(worker)),
+            ordering_stealer: Arc::new(stealer),
         }
     }
 
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.elements.len()
     }
 
     pub fn get(&self, addr: &NetAddr) -> Option<Entry<NetAddr, State>> {
-        self.inner.get(addr)
+        self.elements.get(addr)
     }
 
     pub fn remove(&self, addr: &NetAddr) {
         match self.get(addr) {
             Some(_) => {
-                self.inner.remove(addr).unwrap();
+                self.elements.remove(addr).unwrap();
             }
             None =>
                 println!("[membership] attempt to remove non-existent entry"),
@@ -52,7 +55,7 @@ impl Membership {
             Some(entry) => {
                 let state = entry.value();
                 println!("[membership] overwriting {:?} with alive", state);
-                self.inner.insert(addr, State::Alive);
+                self.elements.insert(addr, State::Alive);
             }
             None => ()
         }
@@ -63,7 +66,7 @@ impl Membership {
             Some(entry) => {
                 let state = entry.value();
                 println!("[membership] overwriting {:?} with suspect", state);
-                self.inner.insert(addr, State::Suspected);
+                self.elements.insert(addr, State::Suspected);
             }
             None => ()
         }
@@ -74,27 +77,62 @@ impl Membership {
             Some(_) =>
                 false,
             None => {
-                self.inner.insert(peer_addr, State::Alive);
+                self.elements.insert(peer_addr, State::Alive);
                 true
             }
         }
     }
 
+    pub fn sample_rr(&self, count: usize, exclude: Vec<NetAddr>) -> Vec<NetAddr> {
+        assert!(count < self.elements.len());
+
+        // drain count keys from the current ordering
+        let mut addrs = vec![];
+        while addrs.len() < count {
+            if let Steal::Data(addr) = self.ordering_stealer.steal() {
+                addrs.push(addr)
+            } else {
+                // Regenerate ordering
+                let mut members = vec![];
+                for entry in self.elements.iter() {
+                    if !exclude.contains(entry.key()) {
+                        members.push(entry)
+                    }
+                }
+
+                // Pick random indices linearly (slow)
+                let mut rng = rand::thread_rng();
+                let mut indices: HashSet<usize> = HashSet::new();
+                while indices.len() < self.elements.len() {
+                    let r: usize = rng.gen_range(0, self.elements.len());
+                    indices.insert(r);
+                }
+
+                for i in indices.iter().cloned() {
+                    let addr = members[i].key();
+                    self.ordering_worker.lock().unwrap()
+                        .push(addr.clone());
+                }
+            }
+        }
+        addrs
+    }
+
     pub fn sample(&self, count: usize, exclude: Vec<NetAddr>) -> Vec<Entry<NetAddr, State>> {
-        assert!(count < self.inner.len());
+        assert!(count < self.elements.len());
 
         let mut members = vec![];
-        for entry in self.inner.iter() {
+        for entry in self.elements.iter() {
             if !exclude.contains(entry.key()) {
                 members.push(entry)
             }
         }
 
-        // Pick count indices at random below self.inner.len()
+        // Pick count indices at random below self.elements.len()
         let mut rng = rand::thread_rng();
         let mut indices: HashSet<usize> = HashSet::new();
         while indices.len() < count {
-            let r: usize = rng.gen_range(0, self.inner.len());
+            let r: usize = rng.gen_range(0, self.elements.len());
             indices.insert(r);
         }
 
@@ -103,16 +141,5 @@ impl Membership {
             sample.push(members[i].clone());
         }
         sample
-    }
-
-    pub fn send(&self, peer_addr: NetAddr, request: Request) {
-        match self.inner.get(&peer_addr) {
-            Some(entry) => {
-                spawn_send(peer_addr.to_socket_addr(), request);
-            }
-            None => {
-                println!("[membership] Unknown peer");
-            }
-        }
     }
 }
