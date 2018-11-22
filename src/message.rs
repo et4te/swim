@@ -59,8 +59,8 @@ pub enum Request {
 #[derive(Clone, Serialize, Deserialize)]
 pub enum Response {
     Join(NetAddr),
-    Ack(NetAddr, Vec<Gossip>),
-    Respond(NetAddr, Colour),
+    Ack(Vec<Gossip>),
+    Respond(Colour),
 }
 
 impl fmt::Debug for Request {
@@ -83,10 +83,10 @@ impl fmt::Debug for Response {
         match self {
             Response::Join(addr) =>
                 write!(f, "JOIN({:?})", addr),
-            Response::Ack(addr, gossip) =>
-                write!(f, "ACK({:?},{:?})", addr, gossip),
-            Response::Respond(peer_addr, col) =>
-                write!(f, "RESPOND({:?},{:?})", peer_addr, col),
+            Response::Ack(gossip) =>
+                write!(f, "ACK({:?})", gossip),
+            Response::Respond(col) =>
+                write!(f, "RESPOND({:?})", col),
         }
     }
 }
