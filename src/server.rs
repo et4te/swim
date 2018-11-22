@@ -1,7 +1,6 @@
 use std::io;
 use std::net::SocketAddr;
 use std::thread;
-use std::time::Duration;
 use std::sync::Arc;
 use futures::sync::mpsc;
 use futures::sync::mpsc::UnboundedSender;
@@ -9,10 +8,7 @@ use tokio;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 use bincode_channel;
-use cache::TimeoutCache;
-use membership::Membership;
-use dissemination::Dissemination;
-use message::{NetAddr, Request, Response, Gossip};
+use message::{Request, Response};
 use swim::Swim;
 
 #[derive(Clone)]
@@ -42,10 +38,10 @@ impl Server {
             Request::Ping(peer_addr, gossip_vec) =>
                 self.swim.handle_ping(sender, peer_addr, gossip_vec),
             Request::PingReq(peer_addr, suspect_addr) =>
-                self.swim.handle_ping_req(peer_addr, suspect_addr),
+                self.swim.handle_ping_req(sender, suspect_addr),
             // Protocol
             Request::Query(peer_addr, col) =>
-                self.swim.handle_query(peer_addr, col),
+                self.swim.handle_query(sender, col),
         }
     }
 
