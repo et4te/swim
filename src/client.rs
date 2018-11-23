@@ -14,7 +14,7 @@ pub fn request(peer_addr: SocketAddr, req: Request, timeout: Duration) -> impl F
     connect.and_then(|socket| {
         let (read_half, write_half) = socket.split();
         let writer = bincode_channel::new_writer::<Request>(write_half);
-        let mut reader = bincode_channel::new_reader::<Response>(read_half);
+        let reader = bincode_channel::new_reader::<Response>(read_half);
 
         let (tx, rx) = mpsc::unbounded();
 
@@ -35,16 +35,4 @@ pub fn request(peer_addr: SocketAddr, req: Request, timeout: Duration) -> impl F
     }).timeout(timeout).and_then(|res| {
         Ok(res[0].clone())
     })
-}
-
-pub fn run_request(peer_addr: SocketAddr, message: Request, timeout: Duration) {
-    let request = request(peer_addr, message, timeout)
-        .and_then(|response| {
-            println!("[client] response = {:?}", response);
-            Ok(())
-        })
-        .map_err(|err| {
-            println!("[client] timeout {:?}", err);
-        });
-    tokio::run(request)
 }
