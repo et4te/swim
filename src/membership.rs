@@ -4,7 +4,7 @@ use crossbeam_skiplist::SkipMap;
 use crossbeam_skiplist::map::Entry;
 use crossbeam::deque::{self, Worker, Stealer, Steal};
 use rand::{self, Rng};
-use message::{NetAddr, Request};
+use message::NetAddr;
 
 #[derive(Debug)]
 pub enum State {
