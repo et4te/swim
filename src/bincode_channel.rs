@@ -1,60 +1,8 @@
-use std::io;
-
-use futures::{Poll, Sink, StartSend, Stream};
 use tokio::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 use tokio::net::TcpStream;
-use tokio::io::{AsyncRead, ReadHalf, WriteHalf};
+use tokio::io::{ReadHalf, WriteHalf};
 use bincode_codec::{BincodeReader, BincodeWriter};
 use serde::{Serialize, Deserialize};
-
-use message::{Request, Response};
-
-/// A bi-directional bincode channel
-
-pub struct BincodeChannel<T> {
-    pub reader: BincodeReader<FramedReader, T>,
-    pub writer: BincodeWriter<FramedWriter, T>,
-}
-
-impl<T> BincodeChannel<T>
-    where
-      for<'a> T: Serialize + Deserialize<'a>,
-{
-    pub fn new(stream: TcpStream) -> BincodeChannel<T> {
-        let (reader, writer) = stream.split();
-        BincodeChannel {
-            reader: new_reader(reader),
-            writer: new_writer(writer),
-        }
-    }
-}
-
-impl Sink for BincodeChannel<Request> {
-    type SinkItem = Request;
-    type SinkError = io::Error;
-    
-    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        self.writer.start_send(item)
-    }
-
-    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        self.writer.poll_complete()
-    }
-
-    fn close(&mut self) -> Poll<(), Self::SinkError> {
-        self.writer.close()
-    }
-
-}
-
-impl Stream for BincodeChannel<Response> {
-    type Item = Response;
-    type Error = io::Error;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.reader.poll()
-    }
-}
 
 /// Utility
 
