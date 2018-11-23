@@ -35,16 +35,8 @@ where
 }
 
 impl<T, U> BincodeReader<T, U> {
-    pub fn get_ref(&self) -> &T {
-        self.inner.get_ref()
-    }
-
     pub fn get_mut(&mut self) -> &mut T {
         self.inner.get_mut()
-    }
-
-    pub fn into_inner(self) -> T {
-        self.inner.into_inner()
     }
 }
 
@@ -96,16 +88,8 @@ where
 }
 
 impl<T: Sink, U> BincodeWriter<T, U> {
-    pub fn get_ref(&self) -> &T {
-        self.inner.get_ref()
-    }
-
     pub fn get_mut(&mut self) -> &mut T {
         self.inner.get_mut()
-    }
-
-    pub fn into_inner(self) -> T {
-        self.inner.into_inner()
     }
 }
 
