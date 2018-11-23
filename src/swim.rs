@@ -5,26 +5,21 @@ use futures::sync::mpsc::{self, UnboundedSender};
 use tokio::prelude::*;
 use tokio::timer::Interval;
 use tokio;
-use colored::Colorize;
 use membership::Membership;
 use dissemination::Dissemination;
 use client;
 use cache::TimeoutCache;
 use message::{NetAddr, Request, Response, Gossip};
-use slush::{self, Colour, Slush};
-
-const PROTOCOL_PERIOD: u64 = 2000;
-const ROUND_TRIP_TIME: u64 = 500;
-const K: usize = 2;
+use constants::{PROTOCOL_PERIOD, ROUND_TRIP_TIME};
+use slush::Slush;
 
 #[derive(Clone)]
 pub struct Swim {
-    addr: NetAddr,
+    pub addr: NetAddr,
     delay: Option<u64>,
     membership: Arc<Membership>,
     dissemination: Arc<Dissemination>,
     timeout_cache: Arc<TimeoutCache>,
-    protocol_state: Arc<Mutex<Slush>>,
 }
 
 impl Swim {
@@ -36,7 +31,6 @@ impl Swim {
             membership: Arc::new(Membership::new()),
             dissemination: Arc::new(Dissemination::new()),
             timeout_cache: Arc::new(TimeoutCache::new()),
-            protocol_state: Arc::new(Mutex::new(Slush::new())),
         }
     }
 
@@ -55,9 +49,22 @@ impl Swim {
                 Ok(())
             })
             .map_err(|err| {
-                println!("[client] bootstrap error = {:?}", err)
+                println!("[swim] bootstrap error = {:?}", err)
             });
         tokio::run(request);
+    }
+
+    pub fn request_self_join(&self, peer_addr: SocketAddr) {
+        let timeout = Duration::from_millis(ROUND_TRIP_TIME);
+        let message = Request::Join(self.addr.clone());
+        let request = client::request(peer_addr, message, timeout)
+            .and_then(|_message| {
+                Ok(())
+            })
+            .map_err(|err| {
+                println!("[swim] self_join error = {:?}", err)
+            });
+        tokio::spawn(request);
     }
 
     pub fn send_self_join(&self, sender: UnboundedSender<Response>) {
@@ -69,7 +76,7 @@ impl Swim {
         let self_1 = self.clone();
         let self_2 = self.clone();
         let timeout = Duration::from_millis(ROUND_TRIP_TIME);
-        let gossip = self.dissemination.acquire_gossip(&self.membership, 1);
+        let gossip = self.dissemination.acquire_gossip(&self.membership);
         let message = Request::Ping(self.addr.clone(), gossip);
         let request = client::request(peer_addr.to_socket_addr().clone(), message, timeout)
             .and_then(move |message| {
@@ -95,7 +102,6 @@ impl Swim {
             let self_1 = self.clone();
             let self_2 = self.clone();
             let timeout = Duration::from_millis(ROUND_TRIP_TIME);            
-            let peer_addr = members[0].key();
             let message = Request::PingReq(self.addr.clone(), suspect_addr.clone());
             let request = client::request(suspect_addr.to_socket_addr().clone(), message, timeout)
                 .and_then(move |message| {
@@ -109,39 +115,12 @@ impl Swim {
                 })
                 .map_err(move |err| {
                     // probe timeout, suspect
+                    println!("[client] ping_req error = {:?}", err);
                     self_2.timeout_cache.create_suspect_timeout(suspect_addr.clone());
                 });
             tokio::spawn(request);
         }
     }
-
-    pub fn forward_ack(&self, peer_sender: UnboundedSender<Response>, suspect_addr: NetAddr) {
-        let gossip = self.dissemination.acquire_gossip(&self.membership, 1);
-        let message = Response::Ack(gossip);
-        let _ = peer_sender.unbounded_send(message).unwrap();
-    }
-
-    //------------------------------------------------------------------------------
-    // Protocol
-    //------------------------------------------------------------------------------
-
-    pub fn send_query(&self, sender: UnboundedSender<Colour>, peer_addr: NetAddr, col: Colour) {
-        let timeout = Duration::from_millis(ROUND_TRIP_TIME);
-        let message = Request::Query(self.addr.clone(), col);
-        let send = client::request(peer_addr.to_socket_addr().clone(), message, timeout)
-            .and_then(move |message| {
-                if let Response::Respond(col) = message {
-                    let _ = sender.unbounded_send(col).unwrap();
-                }
-                Ok(())
-            }).map_err(move |err| {
-                println!("[client] query error = {:?}", err);
-                ()
-            });
-        tokio::spawn(send);
-    }
-
-    //------------------------------------------------------------------------------
 
     pub fn handle_join(&self, sender: UnboundedSender<Response>, peer_addr: NetAddr) {
         if self.membership.process_join(peer_addr.clone()) {
@@ -152,11 +131,11 @@ impl Swim {
         }
     }
 
-    pub fn handle_ping(&self, sender: UnboundedSender<Response>, peer_addr: NetAddr, gossip_vec: Vec<Gossip>) {
+    pub fn handle_ping(&self, sender: UnboundedSender<Response>, gossip_vec: Vec<Gossip>) {
         for gossip in gossip_vec {
             self.process_gossip(gossip);
         }
-        let gossip = self.dissemination.acquire_gossip(&self.membership, 1);
+        let gossip = self.dissemination.acquire_gossip(&self.membership);
         let message = Response::Ack(gossip);
         let _ = sender.unbounded_send(message).unwrap();
     }
@@ -165,7 +144,7 @@ impl Swim {
         // if this node is a suspect, immediately ack
         if self.addr == suspect_addr {
             // gossip alive state?
-            let gossip = self.dissemination.acquire_gossip(&self.membership, 1);
+            let gossip = self.dissemination.acquire_gossip(&self.membership);
             let message = Response::Ack(gossip);
             let _ = sender.unbounded_send(message);
         } else {
@@ -174,7 +153,7 @@ impl Swim {
             let self_1 = self.clone();
             let self_2 = self.clone();
             let timeout = Duration::from_millis(ROUND_TRIP_TIME);
-            let gossip = self.dissemination.acquire_gossip(&self.membership, 1);
+            let gossip = self.dissemination.acquire_gossip(&self.membership);
             let message = Request::Ping(self.addr.clone(), gossip);
             let request = client::request(suspect_addr.to_socket_addr().clone(), message, timeout)
                 .and_then(move |message| {
@@ -189,20 +168,10 @@ impl Swim {
                 })
                 .map_err(move |err| {
                     // else suspect ...
+                    println!("[swim] ping_req error = {:?}", err);
                     self_2.timeout_cache.create_suspect_timeout(suspect_addr);
                 });
             tokio::spawn(request);
-        }
-    }
-
-    pub fn handle_query(&self, sender: UnboundedSender<Response>, col: Colour) {
-        let slush = self.protocol_state.lock().unwrap();
-        if slush.col.clone() != Colour::Undecided {
-            sender.unbounded_send(Response::Respond(slush.col.clone())).unwrap();
-        } else {
-            let mut slush = slush;
-            slush.set_col(col);
-            sender.unbounded_send(Response::Respond(slush.col.clone())).unwrap();
         }
     }
 
@@ -214,10 +183,6 @@ impl Swim {
                 self.membership.remove(&expired_addr);
                 self.dissemination.gossip_confirm(expired_addr);
             }
-
-            for expired_addr in timeouts.query_addr_vec {
-                println!("[swim] query to {:?} failed", expired_addr.clone());
-            }
         }
     }
 
@@ -227,6 +192,7 @@ impl Swim {
             Gossip::Join(peer_addr) => {
                 if peer_addr.clone() != self.addr {
                     if self.membership.process_join(peer_addr.clone()) {
+                        self.request_self_join(peer_addr.to_socket_addr().clone());
                         self.dissemination.gossip_join(peer_addr);
                     }
                 }
@@ -253,8 +219,8 @@ impl Swim {
         }
     }
     
-    pub fn run(self) {
-        let (sender, mut receiver) = mpsc::unbounded();
+    pub fn run(self, slush: Arc<Mutex<Slush>>) {
+        let (tx, mut rx) = mpsc::unbounded();
         let protocol_period = Duration::from_millis(PROTOCOL_PERIOD);
         let swim = Interval::new(Instant::now(), protocol_period)
             .for_each(move |_instant| {
@@ -265,41 +231,9 @@ impl Swim {
                         let peer_addr = addrs[0].clone();
                         self.clone().send_ping(peer_addr.clone());
                     }
-
-                    if self.membership.len() >= 3 {
-                        //----------------------------------------------------------------
-                        // Protocol
-                        //----------------------------------------------------------------
-                        let slush = self.protocol_state.lock().unwrap();
-                        if slush.col != Colour::Undecided {
-                            let mut v = vec![];
-                            // randomly sample from known nodes
-                            let members = self.membership.sample(2, vec![self.addr.clone()]);
-                            for entry in members {
-                                let peer_addr = entry.key();
-                                self.send_query(sender.clone(), peer_addr.clone(), slush.col.clone());
-                            }
-                            // try receive as many as possible
-                            while let Ok(Async::Ready(x)) = receiver.poll() {
-                                v.push(x)
-                            }
-
-                            let (red, blue) = slush::outcome(v);
-                            let schelling = (0.5 * (K as f32)).round() as u32;
-                            let mut slush = slush;
-
-                            if red > schelling {
-                                println!("{:?} {}", (red, blue), "converged to red".red());
-                                slush.set_col(Colour::Red);
-                            }
-
-                            if blue > schelling {
-                                println!("{:?} {}", (red, blue), "converged to blue".blue());
-                                slush.set_col(Colour::Blue);
-                            }
-                        }
-                        //----------------------------------------------------------------
-                    }
+                    
+                    slush.lock().unwrap()
+                        .run(&tx, &mut rx, &self.membership);
 
                     self.handle_timeouts();
 
