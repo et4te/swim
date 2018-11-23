@@ -1,10 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use crossbeam_skiplist::SkipMap;
 use membership::Membership;
 use message::{NetAddr, Gossip};
-
-const MINIMUM_MEMBERS: usize = 2;
-const GOSSIP_RATE: usize = 3;
+use constants::GOSSIP_RATE;
 
 type GossipMap = SkipMap<Gossip, usize>;
 
@@ -50,9 +48,9 @@ impl Dissemination {
         self.try_gossip(gossip)
     }
 
-    pub fn acquire_gossip<'a>(&'a self, membership: &'a Membership, limit: usize) -> Vec<Gossip> {
+    pub fn acquire_gossip<'a>(&'a self, membership: &'a Membership) -> Vec<Gossip> {
         let member_count = membership.len();
-        let gossip_rate = GOSSIP_RATE * (((member_count + 1) as f64).ln().round() as usize);
+        let gossip_rate = GOSSIP_RATE * (((member_count + 1) as f64).ln().ceil() as usize);
         // println!("[dissemination] gossip_rate = {:?}", gossip_rate);
         let mut gossip_vec = vec![];
         if self.gossip_map.len() > 0 {
@@ -62,7 +60,7 @@ impl Dissemination {
                 // reached.
                 let dissemination_count = entry.value();
                 if let Gossip::Join(_) = gossip {
-                    if (*dissemination_count > gossip_rate) {
+                    if *dissemination_count > gossip_rate {
                         ()
                     } else {
                         println!("[dissemination] dissemination_count({:?}), gossip_rate ({:?})",
