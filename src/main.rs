@@ -15,6 +15,7 @@ extern crate tokio_serde;
 
 mod bincode_codec;
 mod bincode_channel;
+mod constants;
 mod message;
 mod membership;
 mod dissemination;
@@ -24,26 +25,12 @@ mod cache;
 mod swim;
 mod slush;
 
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
 use clap::{Arg, App};
 use server::Server;
 use swim::Swim;
-
-enum PeerState {
-    Alive,
-    Suspected,
-    Confirmed,
-}
-
-fn maybe_delay(delay: Option<u64>) {
-    match delay {
-        Some(ms) =>
-            std::thread::sleep(Duration::from_millis(ms)),
-        None =>
-            ()
-    }
-}
+use slush::Slush;
 
 fn main() {
     let matches = App::new("swim")
@@ -78,7 +65,8 @@ fn main() {
     };
 
     let swim = Swim::new(bind_addr.clone(), delay);
-    let server = Server::new(bind_addr.clone(), swim.clone());
+    let slush = Arc::new(Mutex::new(Slush::new(swim.addr.clone())));
+    let server = Server::new(bind_addr.clone(), swim.clone(), slush.clone());
     server.clone().spawn();
 
     if let Some(bootstrap_addr) = matches.value_of("bootstrap") {
@@ -86,5 +74,5 @@ fn main() {
         server.bootstrap(bootstrap_addr);
     }
 
-    swim.run();
+    swim.run(slush);
 }
