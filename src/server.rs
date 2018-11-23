@@ -1,7 +1,7 @@
 use std::io;
 use std::net::SocketAddr;
 use std::thread;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use futures::sync::mpsc;
 use futures::sync::mpsc::UnboundedSender;
 use tokio;
@@ -10,18 +10,21 @@ use tokio::prelude::*;
 use bincode_channel;
 use message::{Request, Response};
 use swim::Swim;
+use slush::Slush;
 
 #[derive(Clone)]
 pub struct Server {
     pub addr: SocketAddr,
     pub swim: Arc<Swim>,
+    pub slush: Arc<Mutex<Slush>>,
 }
 
 impl Server {
-    pub fn new(addr: SocketAddr, swim: Swim) -> Server {
+    pub fn new(addr: SocketAddr, swim: Swim, slush: Arc<Mutex<Slush>>) -> Server {
         Server {
             addr: addr.clone(),
             swim: Arc::new(swim),
+            slush: slush,
         }
     }
 
@@ -35,13 +38,15 @@ impl Server {
             // SWIM
             Request::Join(peer_addr) =>
                 self.swim.handle_join(sender, peer_addr),
-            Request::Ping(peer_addr, gossip_vec) =>
-                self.swim.handle_ping(sender, peer_addr, gossip_vec),
-            Request::PingReq(peer_addr, suspect_addr) =>
+            Request::Ping(_peer_addr, gossip_vec) =>
+                self.swim.handle_ping(sender, gossip_vec),
+            Request::PingReq(_peer_addr, suspect_addr) =>
                 self.swim.handle_ping_req(sender, suspect_addr),
             // Protocol
-            Request::Query(peer_addr, col) =>
-                self.swim.handle_query(sender, col),
+            Request::Query(_peer_addr, col) => {
+                let mut slush = self.slush.lock().unwrap();
+                slush.handle_query(sender, col);
+            }
         }
     }
 
@@ -49,7 +54,7 @@ impl Server {
         // Splits the socket stream into bincode reader / writers
         let (read_half, write_half) = socket.split();
         let writer = bincode_channel::new_writer::<Response>(write_half);
-        let mut reader = bincode_channel::new_reader::<Request>(read_half);
+        let reader = bincode_channel::new_reader::<Request>(read_half);
 
         // Creates sender and receiver channels in order to read and
         // write data from / to the socket
