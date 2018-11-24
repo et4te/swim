@@ -4,6 +4,8 @@ use tokio::io::{ReadHalf, WriteHalf};
 use bincode_codec::{BincodeReader, BincodeWriter};
 use serde::{Serialize, Deserialize};
 
+// TODO Refactor into bincode_codec and delete
+
 /// Utility
 
 pub type FramedReader = FramedRead<ReadHalf<TcpStream>, LengthDelimitedCodec>;

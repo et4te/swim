@@ -3,7 +3,7 @@ use std::time::Duration;
 use std::collections::HashMap;
 use tokio::prelude::*;
 use tokio::timer::{self, delay_queue, DelayQueue};
-use message::NetAddr;
+use types::NetAddr;
 use constants::ROUND_TRIP_TIME;
 
 pub struct Timeouts {
@@ -55,7 +55,7 @@ impl TimeoutCache {
         let mut suspect_map = self.suspect_map.lock().unwrap();
         while let Some(expired) = try_ready!(suspect_timeouts.poll()) {
             let suspect_addr = expired.get_ref().clone();
-            println!("[cache] suspect {:?} expired", suspect_addr);
+            warn!("suspect {:?} expired", suspect_addr);
             let _ = suspect_map.remove(&suspect_addr).unwrap();
             suspect_timeout_addr_vec.push(suspect_addr);
         }
