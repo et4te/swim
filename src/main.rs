@@ -6,6 +6,9 @@ extern crate crossbeam;
 extern crate crossbeam_skiplist;
 #[macro_use]
 extern crate futures;
+#[macro_use]
+extern crate log;
+extern crate pretty_env_logger;
 extern crate rand;
 #[macro_use]
 extern crate serde_derive;
@@ -15,24 +18,27 @@ extern crate tokio_serde;
 
 mod bincode_codec;
 mod bincode_channel;
-mod constants;
-mod message;
-mod membership;
-mod dissemination;
-mod server;
-mod client;
 mod cache;
+mod client;
+mod constants;
+mod digraph;
+mod dissemination;
+mod membership;
+mod protocol;
+mod server;
 mod swim;
-mod slush;
+mod types;
 
 use std::sync::{Arc, Mutex};
 use std::net::SocketAddr;
 use clap::{Arg, App};
 use server::Server;
 use swim::Swim;
-use slush::Slush;
+use protocol::snowball::Snowball;
 
 fn main() {
+    pretty_env_logger::init();
+
     let matches = App::new("swim")
         .version("1.0")
         .arg(Arg::with_name("address")
@@ -65,8 +71,8 @@ fn main() {
     };
 
     let swim = Swim::new(bind_addr.clone(), delay);
-    let slush = Arc::new(Mutex::new(Slush::new(swim.addr.clone())));
-    let server = Server::new(bind_addr.clone(), swim.clone(), slush.clone());
+    let snowball = Arc::new(Mutex::new(Snowball::new(swim.addr.clone())));
+    let server = Server::new(bind_addr.clone(), swim.clone(), snowball.clone());
     server.clone().spawn();
 
     if let Some(bootstrap_addr) = matches.value_of("bootstrap") {
@@ -74,5 +80,5 @@ fn main() {
         server.bootstrap(bootstrap_addr);
     }
 
-    swim.run(slush);
+    swim.run(snowball);
 }

@@ -8,23 +8,25 @@ use tokio;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 use bincode_channel;
-use message::{Request, Response};
 use swim::Swim;
-use slush::Slush;
+use protocol::snowball::Snowball;
+use types::{Request, Response};
+
+// TODO Add TLS support
 
 #[derive(Clone)]
 pub struct Server {
     pub addr: SocketAddr,
     pub swim: Arc<Swim>,
-    pub slush: Arc<Mutex<Slush>>,
+    pub snowflake: Arc<Mutex<Snowball>>,
 }
 
 impl Server {
-    pub fn new(addr: SocketAddr, swim: Swim, slush: Arc<Mutex<Slush>>) -> Server {
+    pub fn new(addr: SocketAddr, swim: Swim, snowflake: Arc<Mutex<Snowball>>) -> Server {
         Server {
             addr: addr.clone(),
             swim: Arc::new(swim),
-            slush: slush,
+            snowflake: snowflake,
         }
     }
 
@@ -33,7 +35,7 @@ impl Server {
     }
 
     fn process_input(self, sender: UnboundedSender<Response>, request: Request) {
-        println!("[server] RECV: {:?}", request.clone());
+        info!("RECV={:?}", request.clone());
         match request.clone() {
             // SWIM
             Request::Join(peer_addr) =>
@@ -44,8 +46,8 @@ impl Server {
                 self.swim.handle_ping_req(sender, suspect_addr),
             // Protocol
             Request::Query(_peer_addr, col) => {
-                let mut slush = self.slush.lock().unwrap();
-                slush.handle_query(sender, col);
+                let mut snowflake = self.snowflake.lock().unwrap();
+                snowflake.handle_query(sender, col);
             }
         }
     }
@@ -66,7 +68,7 @@ impl Server {
                 let () = self.clone().process_input(tx.clone(), message);
                 Ok(())
             }).map_err(|err| {
-                println!("[server] Error processing input = {:?}", err);
+                error!("handle_connection => {:?}", err);
             });
 
         tokio::spawn(input_reader);
@@ -92,9 +94,9 @@ impl Server {
                     let () = self.clone().handle_connection(socket);
                     Ok(())
                 }).map_err(|err| {
-                    println!("[server] Accept error = {:?}", err);
+                    error!("spawn => {:?}", err);
                 });
-            println!("[server] Listening at {:?}", bind_addr);
+            info!("listening at {:?}", bind_addr);
             tokio::run(server)
         })
     }

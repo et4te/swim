@@ -6,8 +6,8 @@ use tokio::prelude::*;
 use tokio::net::TcpStream;
 use tokio::timer::timeout;
 use tokio;
-use message::{Request, Response};
 use bincode_channel;
+use types::{Request, Response};
 
 pub fn request(peer_addr: SocketAddr, req: Request, timeout: Duration) -> impl Future<Item = Response, Error = timeout::Error<io::Error>> {
     let connect = TcpStream::connect(&peer_addr);

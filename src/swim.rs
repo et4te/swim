@@ -5,13 +5,13 @@ use futures::sync::mpsc::{self, UnboundedSender};
 use tokio::prelude::*;
 use tokio::timer::Interval;
 use tokio;
+use cache::TimeoutCache;
+use client;
 use membership::Membership;
 use dissemination::Dissemination;
-use client;
-use cache::TimeoutCache;
-use message::{NetAddr, Request, Response, Gossip};
 use constants::{PROTOCOL_PERIOD, ROUND_TRIP_TIME};
-use slush::Slush;
+use protocol::snowball::Snowball;
+use types::{NetAddr, Request, Response, Gossip};
 
 #[derive(Clone)]
 pub struct Swim {
@@ -49,7 +49,7 @@ impl Swim {
                 Ok(())
             })
             .map_err(|err| {
-                println!("[swim] bootstrap error = {:?}", err)
+                warn!("send_bootstrap_join => {:?}", err)
             });
         tokio::run(request);
     }
@@ -62,7 +62,7 @@ impl Swim {
                 Ok(())
             })
             .map_err(|err| {
-                println!("[swim] self_join error = {:?}", err)
+                warn!("request_self_join => {:?}", err)
             });
         tokio::spawn(request);
     }
@@ -89,7 +89,7 @@ impl Swim {
             })
             .map_err(move |err| {
                 // if a timeout occurs, initiate a probe
-                println!("[client] ping error = {:?}", err);
+                warn!("send_ping => {:?}", err);
                 self_2.send_ping_req(peer_addr);
             });
         tokio::spawn(request);
@@ -98,7 +98,7 @@ impl Swim {
     pub fn send_ping_req(self, suspect_addr: NetAddr) {
         let members = self.membership.sample(1, vec![self.addr.clone()]);
         if members.len() > 0 {
-            println!("[client] initiating probe");
+            info!("initiating probe");
             let self_1 = self.clone();
             let self_2 = self.clone();
             let timeout = Duration::from_millis(ROUND_TRIP_TIME);            
@@ -115,7 +115,7 @@ impl Swim {
                 })
                 .map_err(move |err| {
                     // probe timeout, suspect
-                    println!("[client] ping_req error = {:?}", err);
+                    warn!("send_ping_req => {:?}", err);
                     self_2.timeout_cache.create_suspect_timeout(suspect_addr.clone());
                 });
             tokio::spawn(request);
@@ -127,7 +127,7 @@ impl Swim {
             self.send_self_join(sender);
             self.dissemination.gossip_join(peer_addr);
         } else {
-            println!("[swim] received duplicate join request for {:?}", peer_addr);
+            warn!("received duplicate join request for {:?}", peer_addr);
         }
     }
 
@@ -148,7 +148,7 @@ impl Swim {
             let message = Response::Ack(gossip);
             let _ = sender.unbounded_send(message);
         } else {
-            println!("[swim] initiating probe into {:?}", suspect_addr);
+            info!("probe suspect {:?}", suspect_addr);
             // send ping to suspect
             let self_1 = self.clone();
             let self_2 = self.clone();
@@ -168,7 +168,7 @@ impl Swim {
                 })
                 .map_err(move |err| {
                     // else suspect ...
-                    println!("[swim] ping_req error = {:?}", err);
+                    warn!("handle_ping_req => {:?}", err);
                     self_2.timeout_cache.create_suspect_timeout(suspect_addr);
                 });
             tokio::spawn(request);
@@ -179,7 +179,7 @@ impl Swim {
         if let Ok(Async::Ready(timeouts)) = self.timeout_cache.poll_purge() {
             for expired_addr in timeouts.suspect_addr_vec {
                 // Disseminate confirmed failure
-                println!("[swim] failure confirmed = {:?}", expired_addr.clone());
+                warn!("failure confirmed = {:?}", expired_addr.clone());
                 self.membership.remove(&expired_addr);
                 self.dissemination.gossip_confirm(expired_addr);
             }
@@ -187,7 +187,7 @@ impl Swim {
     }
 
     fn process_gossip(&self, gossip: Gossip) {
-        println!("[swim] GOSSIP: {:?}", gossip.clone());
+        info!("GOSSIP={:?}", gossip.clone());
         match gossip.clone() {
             Gossip::Join(peer_addr) => {
                 if peer_addr.clone() != self.addr {
@@ -199,32 +199,34 @@ impl Swim {
             }
             // Clear the suspect timeout & mark as alive
             Gossip::Alive(peer_addr) => {
+                info!("peer {:?} reported as alive", peer_addr.clone());
                 self.membership.alive(peer_addr.clone());
                 self.dissemination.gossip_alive(peer_addr.clone());
-                println!("[swim] removing suspect timeout");
                 self.timeout_cache.remove_suspect_timeout(&peer_addr);
             }
             // Create a suspect timeout & mark as suspected
             Gossip::Suspect(peer_addr) => {
+                info!("peer {:?} reported as suspected", peer_addr.clone());
                 self.membership.suspect(peer_addr.clone());
                 self.dissemination.gossip_suspect(peer_addr.clone());
-                println!("[swim] creating suspect timeout");
                 self.timeout_cache.create_suspect_timeout(peer_addr);
             }
             // Remove the peer from the membership map
             Gossip::Confirm(peer_addr) => {
+                info!("removing peer {:?} from membership map", peer_addr.clone());
                 self.membership.remove(&peer_addr);
                 self.dissemination.gossip_confirm(peer_addr);
             }
         }
     }
     
-    pub fn run(self, slush: Arc<Mutex<Slush>>) {
+    pub fn run(self, snowflake: Arc<Mutex<Snowball>>) {
+        let mut decided = false;
         let (tx, mut rx) = mpsc::unbounded();
         let protocol_period = Duration::from_millis(PROTOCOL_PERIOD);
         let swim = Interval::new(Instant::now(), protocol_period)
             .for_each(move |_instant| {
-                println!("[swim] members = {:?}", self.membership.len());
+                info!("membership.len() = {:?}", self.membership.len());
                 if self.membership.len() >= 2 {
                     let addrs = self.membership.sample_rr(1, vec![self.addr.clone()]);
                     if addrs.len() > 0 {
@@ -232,8 +234,10 @@ impl Swim {
                         self.clone().send_ping(peer_addr.clone());
                     }
                     
-                    slush.lock().unwrap()
-                        .run(&tx, &mut rx, &self.membership);
+                    if !decided {
+                        decided = snowflake.lock().unwrap()
+                            .run(&tx, &mut rx, &self.membership);
+                    }
 
                     self.handle_timeouts();
 
@@ -242,7 +246,7 @@ impl Swim {
                     Ok(())
                 }
             }).map_err(|err| {
-                panic!("[swim] interval error; err = {:?}", err);
+                error!("interval error; err = {:?}", err);
             });
         tokio::run(swim);
     }
