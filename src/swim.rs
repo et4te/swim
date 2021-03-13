@@ -98,7 +98,7 @@ impl Swim {
     pub fn send_ping_req(self, suspect_addr: NetAddr) {
         let members = self.membership.sample(1, vec![self.addr.clone()]);
         if members.len() > 0 {
-            info!("initiating probe");
+            debug!("initiating probe");
             let self_1 = self.clone();
             let self_2 = self.clone();
             let timeout = Duration::from_millis(ROUND_TRIP_TIME);            
@@ -148,7 +148,7 @@ impl Swim {
             let message = Response::Ack(gossip);
             let _ = sender.unbounded_send(message);
         } else {
-            info!("probe suspect {:?}", suspect_addr);
+            debug!("probe suspect {:?}", suspect_addr);
             // send ping to suspect
             let self_1 = self.clone();
             let self_2 = self.clone();
@@ -187,7 +187,7 @@ impl Swim {
     }
 
     fn process_gossip(&self, gossip: Gossip) {
-        info!("GOSSIP={:?}", gossip.clone());
+        debug!("GOSSIP={:?}", gossip.clone());
         match gossip.clone() {
             Gossip::Join(peer_addr) => {
                 if peer_addr.clone() != self.addr {
@@ -199,21 +199,21 @@ impl Swim {
             }
             // Clear the suspect timeout & mark as alive
             Gossip::Alive(peer_addr) => {
-                info!("peer {:?} reported as alive", peer_addr.clone());
+                debug!("peer {:?} reported as alive", peer_addr.clone());
                 self.membership.alive(peer_addr.clone());
                 self.dissemination.gossip_alive(peer_addr.clone());
                 self.timeout_cache.remove_suspect_timeout(&peer_addr);
             }
             // Create a suspect timeout & mark as suspected
             Gossip::Suspect(peer_addr) => {
-                info!("peer {:?} reported as suspected", peer_addr.clone());
+                warn!("peer {:?} reported as suspected", peer_addr.clone());
                 self.membership.suspect(peer_addr.clone());
                 self.dissemination.gossip_suspect(peer_addr.clone());
                 self.timeout_cache.create_suspect_timeout(peer_addr);
             }
             // Remove the peer from the membership map
             Gossip::Confirm(peer_addr) => {
-                info!("removing peer {:?} from membership map", peer_addr.clone());
+                warn!("removing peer {:?} from membership map", peer_addr.clone());
                 self.membership.remove(&peer_addr);
                 self.dissemination.gossip_confirm(peer_addr);
             }
@@ -226,7 +226,7 @@ impl Swim {
         let protocol_period = Duration::from_millis(PROTOCOL_PERIOD);
         let swim = Interval::new(Instant::now(), protocol_period)
             .for_each(move |_instant| {
-                info!("membership.len() = {:?}", self.membership.len());
+                debug!("membership.len() = {:?}", self.membership.len());
                 if self.membership.len() >= 2 {
                     let addrs = self.membership.sample_rr(1, vec![self.addr.clone()]);
                     if addrs.len() > 0 {

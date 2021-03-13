@@ -29,15 +29,15 @@ impl Snowball {
         let r: usize = rng.gen_range(0, 3);
         let col = match r {
             0 => {
-                debug!("started undecided");
+                info!("started undecided");
                 Colour::Undecided
             },
             1 => {
-                debug!("{}", "started red".red());
+                info!("{}", "started red".red());
                 Colour::Red
             },
             2 => {
-                debug!("{}", "started blue".blue());
+                info!("{}", "started blue".blue());
                 Colour::Blue
             },
             _ => {
@@ -113,7 +113,7 @@ impl Snowball {
                 if red > quiescent_point {
                     self.d.entry(Colour::Red).and_modify(|d| *d += 1);
                     if self.d[&Colour::Red] > *self.d.get(&self.col).unwrap() {
-                        debug!("{:?} {}", (red, blue), "converged to red".red());
+                        info!("{:?} {}", (red, blue), "converged to red".red());
                         self.set_col(Colour::Red);
                     }
                     
@@ -121,11 +121,10 @@ impl Snowball {
                         let cnt = self.cnt.clone();
                         self.set_cnt(cnt + 1);
                         if self.cnt > B {
-                            debug!("{}", "decided on red".red());
+                            info!("{}", "decided on red".red());
                             return true;
                         }
                     } else {
-                        debug!("{:?} {}", (red, blue), "lastcol set to red".red());
                         self.set_lastcol(Colour::Red);
                         self.set_cnt(0u32);
                     }
@@ -134,7 +133,7 @@ impl Snowball {
                 if blue > quiescent_point {
                     self.d.entry(Colour::Blue).and_modify(|d| *d += 1);
                     if self.d[&Colour::Blue] > *self.d.get(&self.col).unwrap() {
-                        debug!("{:?} {}", (red, blue), "converged to blue".blue());
+                        info!("{:?} {}", (red, blue), "converged to blue".blue());
                         self.set_col(Colour::Blue);
                     }
                     
@@ -142,11 +141,11 @@ impl Snowball {
                         let cnt = self.cnt.clone();
                         self.set_cnt(cnt + 1);
                         if self.cnt > B {
-                            debug!("{}", "decided on blue".blue());
+                            info!("{}", "decided on blue".blue());
                             return true;
                         }
                     } else {
-                        debug!("{:?} {}", (red, blue), "lastcol set to blue".blue());
+                        info!("{:?} {}", (red, blue), "lastcol set to blue".blue());
                         self.set_lastcol(Colour::Blue);
                         self.set_cnt(0u32);
                     }

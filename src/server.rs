@@ -35,7 +35,7 @@ impl Server {
     }
 
     fn process_input(self, sender: UnboundedSender<Response>, request: Request) {
-        info!("RECV={:?}", request.clone());
+        debug!("RECV={:?}", request.clone());
         match request.clone() {
             // SWIM
             Request::Join(peer_addr) =>
