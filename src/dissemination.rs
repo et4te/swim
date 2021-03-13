@@ -51,7 +51,7 @@ impl Dissemination {
     pub fn acquire_gossip<'a>(&'a self, membership: &'a Membership) -> Vec<Gossip> {
         let member_count = membership.len();
         let gossip_rate = GOSSIP_RATE * (((member_count + 1) as f64).ln().ceil() as usize);
-        info!("gossip_rate = {:?}", gossip_rate);
+        debug!("gossip_rate = {:?}", gossip_rate);
         let mut gossip_vec = vec![];
         if self.gossip_map.len() > 0 {
             for entry in self.gossip_map.iter() {
@@ -63,7 +63,7 @@ impl Dissemination {
                     if *dissemination_count > gossip_rate {
                         ()
                     } else {
-                        info!("dissemination_count({:?}), gossip_rate ({:?})",
+                        debug!("dissemination_count({:?}), gossip_rate ({:?})",
                               *dissemination_count, gossip_rate);
                         self.gossip_map.insert(gossip.clone(), dissemination_count + 1);
                         gossip_vec.push(gossip.clone())
@@ -72,7 +72,7 @@ impl Dissemination {
                     if *dissemination_count > gossip_rate {
                         ()
                     } else {
-                        info!("dissemination_count({:?}), gossip_rate ({:?})",
+                        debug!("dissemination_count({:?}), gossip_rate ({:?})",
                               *dissemination_count, gossip_rate);
                         self.gossip_map.insert(gossip.clone(), dissemination_count + 1);
                         gossip_vec.push(gossip.clone())
